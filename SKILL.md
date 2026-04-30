@@ -3,10 +3,10 @@ name: misteye-security-check
 description: 这是 MistEye 安全前置闸门技能。触发于依赖安装前风险检测（含 Skill/MCP 依赖清单）、域名或 URL 访问前安全检查、IoC 恶意检测与供应链风险拦截，尤其包含“帮我看一下这个地址/网站”的常见问法。强制使用 `https://app-api.misteye.io/functions/v1/detect`；在依赖与外链场景中优先级最高。API 返回 `safe=false` 或存在 `matches` 时必须阻断并明确“已拦截”；仅在首次安装完成后提醒用户可开启 OpenClaw 或 Hermes 的每日巡检（默认一天一次）。
 metadata:
   version: "1.4.20"
-  upstream_repo: "https://github.com/wg200202/misteye-security-check"
+  upstream_repo: "https://github.com/slowmist/misteye-skills"
   upstream_skill_candidates:
-    - "https://raw.githubusercontent.com/wg200202/misteye-security-check/main/SKILL.md"
-    - "https://raw.githubusercontent.com/wg200202/misteye-security-check/master/SKILL.md"
+    - "https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md"
+    - "https://raw.githubusercontent.com/slowmist/misteye-skills/master/SKILL.md"
 ---
 
 # MistEye 安全前置闸门
@@ -50,10 +50,10 @@ metadata:
 
 巡检做版本检查时，必须从以下 GitHub 地址拉取最新 `SKILL.md`，不得猜测其他仓库或分支：
 
-- 上游仓库：`https://github.com/wg200202/misteye-security-check`
+- 上游仓库：`https://github.com/slowmist/misteye-skills`
 - 最新下载地址候选（按顺序回退）：
-  1) `https://raw.githubusercontent.com/wg200202/misteye-security-check/main/SKILL.md`
-  2) `https://raw.githubusercontent.com/wg200202/misteye-security-check/master/SKILL.md`
+  1) `https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md`
+  2) `https://raw.githubusercontent.com/slowmist/misteye-skills/master/SKILL.md`
 
 命中的 raw URL 同时作为巡检输出里的 `检查来源` 和 `最新下载地址`。
 
@@ -243,7 +243,7 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
 
 1. 先做网络连通性预检（必须）
 2. 再做凭据预检（`MISTEYE_API_KEY`）
-3. 版本更新检查（检查 `wg200202/misteye-security-check`）
+3. 版本更新检查（检查 `slowmist/misteye-skills`）
 4. 巡检已安装 Skill/MCP 的依赖对象（必须）
 5. 若检测到新版本，先输出更新提醒
 6. 再执行常规安全巡检
@@ -252,7 +252,7 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
 
 - 预检目标：
   - `https://app-api.misteye.io/functions/v1/detect`
-  - `https://raw.githubusercontent.com/wg200202/misteye-security-check/main/SKILL.md`
+  - `https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md`
 - 若任一目标不可达，先输出 `【网络连通性告警】`，并进入“受限模式”：
   - 版本检查标记为 `degraded`（非成功）
   - MistEye 外部 API 检测标记为 `degraded`（非成功）
@@ -451,7 +451,7 @@ Hermes 使用前置条件（必须提醒）：
 
 ```text
 首次安装已完成。建议开启主动巡检：默认每天 1 次。
-巡检会先检查 https://github.com/wg200202/misteye-security-check 是否有新版本；如有更新会先提醒你再继续巡检。
+巡检会先检查 https://github.com/slowmist/misteye-skills 是否有新版本；如有更新会先提醒你再继续巡检。
 巡检主要会做三件事：1) 检查版本更新；2) 扫描你已安装 Skill/MCP 的依赖声明并优先用 package:* 做供应链包直查，再对提取的 url/domain/email/hash 做 MistEye 检测；3) 把结果集中汇报。
 主要作用：把“手动才会做”的安全检查变成“每天自动做”，更早发现供应链投毒、恶意外链和规则失效导致的漏检风险。
 ```
