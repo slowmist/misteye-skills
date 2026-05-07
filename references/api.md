@@ -1,31 +1,31 @@
-# MistEye detect 接口（唯一）
+# MistEye Detect API (Single Allowed Endpoint)
 
-唯一允许使用的检测接口：
+The only allowed detection endpoint is:
 
 ```text
 POST https://app-api.misteye.io/functions/v1/detect
 ```
 
-官方文档入口：
+Official documentation entry:
 
 ```text
 https://app.misteye.io/api-docs
 ```
 
-请求头：
+Request headers:
 
 ```text
 Content-Type: application/json
 x-api-key: <MistEye API key>
 ```
 
-如果没有 API key：
+If there is no API key:
 
-- 前往 `https://app.misteye.io/api-keys` 获取或管理 key
-- 如果还没有账号，先注册 MistEye，再创建 API key
-- 未获取 key 前，检测应按高风险未确认处理（`error/no_check` -> 阻断）
+- Go to `https://app.misteye.io/api-keys` to obtain or manage a key
+- If you do not yet have an account, register with MistEye first, then create an API key
+- Before a key is available, treat detection as high-risk and unconfirmed (`error/no_check` -> block)
 
-请求体：
+Request body:
 
 ```json
 {
@@ -34,14 +34,14 @@ x-api-key: <MistEye API key>
 }
 ```
 
-字段约束：
+Field constraints:
 
-- `target`：必填字符串，检测对象；服务端会 trim/lowercase；最长 2,000 字符
-- `type`：必填字符串，必须使用官方支持的检测类型
+- `target`: required string; the detection target; the service trims and lowercases it; maximum 2,000 characters
+- `type`: required string; must use an officially supported detection type
 
-当前可用 `type`：
+Currently available `type` values:
 
-网络与身份：
+Network and identity:
 
 - `ip`
 - `ip:port`
@@ -49,14 +49,14 @@ x-api-key: <MistEye API key>
 - `url`
 - `email`
 
-文件哈希：
+File hashes:
 
 - `file_hash`
 - `md5`
 - `sha1`
 - `sha256`
 
-供应链包：
+Supply-chain packages:
 
 - `package:npm`
 - `package:pypi`
@@ -65,14 +65,14 @@ x-api-key: <MistEye API key>
 - `package:go`
 - `package:cratesio`
 
-官方文档中标记为 Coming Soon 的类型（不得作为硬门禁唯一依据）：
+Types marked as Coming Soon in the official docs, and which must not be used as the sole basis for a hard gate:
 
 - `repo:github` / `repo:gitlab` / `repo:bitbucket`
 - `extension:chrome` / `extension:firefox` / `extension:vscode`
 - `ai-tool:mcp` / `ai-tool:skill`
 - `mobile-app:apk` / `mobile-app:ipa`
 
-响应格式：
+Response format:
 
 ```json
 {
@@ -90,7 +90,7 @@ x-api-key: <MistEye API key>
 }
 ```
 
-未命中示例：
+No-match example:
 
 ```json
 {
@@ -99,14 +99,14 @@ x-api-key: <MistEye API key>
 }
 ```
 
-依赖逐项直查约束（必须）：
+Per-item dependency direct lookup constraints (mandatory):
 
-- 每个依赖条目都要至少发起一次供应链包直查
-- 能识别生态时必须优先使用 `package:*` 类型，例如 PyPI 使用 `package:pypi`、npm 使用 `package:npm`
-- 依赖条目有明确名称和版本时，优先把 target 规范化为 `name@version`；无法规范化时使用原始依赖字符串作为 `target`
-- 仅检测公共仓库域名（如 `pypi.org` / `files.pythonhosted.org`）不算完成依赖检测
+- Every dependency item must trigger at least one supply-chain package direct lookup
+- When the ecosystem can be identified, a `package:*` type must be preferred, for example `package:pypi` for PyPI and `package:npm` for npm
+- If a dependency item has a clear name and version, prefer normalizing the target to `name@version`; if normalization is not possible, use the raw dependency string as the `target`
+- Checking only public repository domains such as `pypi.org` / `files.pythonhosted.org` does not count as a complete dependency check
 
-示例：
+Examples:
 
 ```bash
 curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
@@ -115,7 +115,7 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
   -d '{"target":"https://example.com","type":"url"}'
 ```
 
-供应链包示例：
+Supply-chain package example:
 
 ```bash
 curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
@@ -124,36 +124,36 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
   -d '{"target":"requests@2.32.3","type":"package:pypi"}'
 ```
 
-## 阻断映射（强制）
+## Blocking Mapping (Mandatory)
 
-- `safe=false` 或 `matches.length > 0`：命中威胁情报，立即阻断，输出“已拦截”
-- `safe=true` 且 `matches=[]`：未命中情报库，可继续但必须附带风险提示，禁止宣称绝对安全
-- `error`：检测失败，视同高风险未确认，立即阻断，输出“已拦截（未完成检测）”
-- `no_check`：未执行检测，视同高风险未确认，立即阻断，输出“已拦截（未完成检测）”
+- `safe=false` or `matches.length > 0`: threat-intel hit; block immediately and output "blocked"
+- `safe=true` and `matches=[]`: no intelligence hit; it may continue, but a risk warning must be attached, and absolute safety must not be claimed
+- `error`: detection failed; treat as high-risk and unconfirmed; block immediately and output "blocked (detection incomplete)"
+- `no_check`: no detection was performed; treat as high-risk and unconfirmed; block immediately and output "blocked (detection incomplete)"
 
-未命中可选复核：
+Optional review when there is no match:
 
-- `safe=true` 且 `matches=[]` 时，可提示用户是否到对应生态的官方包源/注册表查看包元数据
-- 未经用户同意，不自动打开或访问官方包源页面
-- 常见官方包源 URL：
-  - npm：`https://registry.npmjs.org/<package>`
-  - PyPI：`https://pypi.org/pypi/<package>/json`
-  - NuGet：`https://api.nuget.org/v3-flatcontainer/<lowercase-package>/index.json`
-  - RubyGems：`https://rubygems.org/api/v1/gems/<gem>.json`
-  - Go：`https://pkg.go.dev/<module>`
-  - crates.io：`https://crates.io/api/v1/crates/<crate>`
+- When `safe=true` and `matches=[]`, you may ask the user whether they want to check the official package source or registry for metadata
+- Do not automatically open or visit official package source pages without user consent
+- Common official package source URLs:
+  - npm: `https://registry.npmjs.org/<package>`
+  - PyPI: `https://pypi.org/pypi/<package>/json`
+  - NuGet: `https://api.nuget.org/v3-flatcontainer/<lowercase-package>/index.json`
+  - RubyGems: `https://rubygems.org/api/v1/gems/<gem>.json`
+  - Go: `https://pkg.go.dev/<module>`
+  - crates.io: `https://crates.io/api/v1/crates/<crate>`
 
-内部输出可继续沿用标签：
+Internal output labels may continue to be used:
 
-- `malicious` = API `safe=false` 或 `matches.length > 0`
-- `no_match` = API `safe=true` 且 `matches=[]`
+- `malicious` = API `safe=false` or `matches.length > 0`
+- `no_match` = API `safe=true` and `matches=[]`
 
-## 常见失败处理
+## Common Failure Handling
 
-- `401/403`：API key 缺失或无效，按 `error` 处理并阻断
-- `400`：JSON、`target` 或 `type` 无效，按 `error` 处理并阻断
-- `413`：`target` 超过 2,000 字符，按 `error` 处理并阻断
-- `429`：达到 10 req/s 速率限制，按 `error` 处理并阻断；如响应头有 `Retry-After`，可等待后重试
-- `500`：服务端异常，按 `error` 处理并阻断
-- 网络超时/解析失败：按 `error` 处理并阻断
-- 不支持的 `type` 或请求体格式错误：按 `error` 处理并阻断
+- `401/403`: API key missing or invalid; treat as `error` and block
+- `400`: invalid JSON, `target`, or `type`; treat as `error` and block
+- `413`: `target` exceeds 2,000 characters; treat as `error` and block
+- `429`: rate limit of 10 req/s reached; treat as `error` and block; if the response headers include `Retry-After`, you may wait and retry
+- `500`: server exception; treat as `error` and block
+- Network timeout or parse failure: treat as `error` and block
+- Unsupported `type` or malformed request body: treat as `error` and block

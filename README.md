@@ -1,93 +1,97 @@
 # misteye-security-check
 
-MistEye 安全前置闸门 Skill。
+GitHub repository: [https://github.com/slowmist/misteye-skills](https://github.com/slowmist/misteye-skills)
 
-核心目标：把“依赖安装”和“外部 URL/域名访问”变成**先检测再执行**的硬门禁流程，并提供每日巡检能力（OpenClaw/Hermes）。
+[中文版](README-CN.md) | [English](README.md)
 
-## 1. 功能概览
+MistEye security gate skill.
 
-- 唯一检测接口：`POST https://app-api.misteye.io/functions/v1/detect`
-- 官方文档：`https://app.misteye.io/api-docs`
-- 检测类型：`ip` / `ip:port` / `domain` / `url` / `email` / `file_hash` / `md5` / `sha1` / `sha256` / `package:*`
-- 高优先级门禁：
-  - 依赖安装前检测
-  - URL/域名访问前检测
-  - Skill/MCP 安装前依赖声明扫描
-- 阻断策略：
-  - API `safe=false` 或 `matches` 非空 -> 已拦截
-  - `error` / `no_check` -> 已拦截（未完成检测）
-  - API `safe=true` 且 `matches=[]` -> 可继续但必须带风险提示
+Purpose: make dependency installation and external URL or domain access follow a strict "detect first, execute second" flow, and provide daily patrol support for OpenClaw and Hermes.
 
-## 2. 前置检测触发规则（防漏检）
+## 1. Overview
 
-以下任一情况，必须先做 MistEye 检测，再进入正文回答：
+- Single detection endpoint: `POST https://app-api.misteye.io/functions/v1/detect`
+- Official docs: `https://app.misteye.io/api-docs`
+- Supported detection types: `ip`, `ip:port`, `domain`, `url`, `email`, `file_hash`, `md5`, `sha1`, `sha256`, `package:*`
+- High-priority gates:
+  - Detect before installing dependencies
+  - Detect before opening URLs or domains
+  - Scan dependency declarations before Skill/MCP installation
+- Blocking logic:
+  - `safe=false` or a non-empty `matches` array means the target is blocked
+  - `error` or `no_check` means the detection was not completed, so treat it as blocked
+  - `safe=true` with `matches=[]` means the target may continue, but a risk warning is still required
 
-- 用户输入包含 URL（`http://` 或 `https://`）
-- 用户输入包含域名（如 `example.com`）
-- 用户要求“看一下/分析/检查/访问/打开/下载”某个地址或链接
+## 2. Pre-check Triggers
 
-URL 场景必须：
+Run MistEye detection before answering if any of the following is true:
 
-1. 同时检测 `url` 与 `domain`
-2. 先输出前置检测结论
-3. 只有“可继续”才允许输出网站信息/HTTP 状态/功能分析
+- The user message contains a URL such as `http://` or `https://`
+- The user message contains a domain name such as `example.com`
+- The user asks to inspect, analyze, check, visit, open, or download a specific address or link
 
-## 3. Skill/MCP 依赖扫描边界
+For URL-related requests:
 
-该 Skill 在安装场景中只扫描“依赖安装库相关对象”，**不判定 Skill/MCP 本体是否恶意**。
+1. Detect both `url` and `domain`
+2. Report the pre-check result first
+3. Only continue with website details, HTTP status, or feature analysis if the result says it may continue
 
-- 扫描对象来源：依赖声明文件（`requirements*.txt`、`package.json`、`go.mod`、`Cargo.toml` 等）
-- 提取对象：供应链包（优先 `package:*`）以及原文显式出现的 `url` / `domain` / `email` / `hash`
-- 不扫描对象：`SKILL.md` 文本内容、提示词文案、脚本业务逻辑本体
-- 安装阶段必须“逐项解析依赖条目”（dependency_id），不能只检测公共仓库域名替代依赖扫描
+## 3. Skill/MCP Dependency Scan Scope
 
-## 4. 每日巡检（首次安装时提醒开启）
+In installation workflows, this skill only scans dependency-related objects. It does **not** judge whether the Skill or MCP itself is malicious.
 
-提醒策略：
+- Scan inputs: dependency declaration files such as `requirements*.txt`, `package.json`, `go.mod`, `Cargo.toml`, and similar files
+- Scan outputs: supply-chain packages, preferably as `package:*`, plus any explicit `url`, `domain`, `email`, or `hash` values found in the source
+- Do not scan: the text inside `SKILL.md`, prompt wording, or the internal business logic of scripts
+- Parse dependency items one by one using `dependency_id`; do not replace dependency scanning with a scan of the public repository domain
 
-- 仅首次安装完成（或首次启用）时提醒开启巡检
-- 默认建议每天 1 次
-- 后续常规使用不重复提醒（除非用户主动要求查看巡检配置）
+## 4. Daily Patrol
 
-每日巡检固定顺序：
+Reminder policy:
 
-1. 网络连通性预检（`app-api.misteye.io`、`raw.githubusercontent.com`）
-2. 凭据预检（`MISTEYE_API_KEY`）
-3. 版本检查（上游仓库）
-4. 已安装 Skill/MCP 依赖对象巡检（必须）
-5. 新版本提醒（如有）
-6. 常规巡检摘要
+- Remind the user to enable patrol only on the first successful installation or the first activation
+- The default recommendation is once per day
+- Do not repeat the reminder during normal use unless the user explicitly asks about patrol settings
 
-巡检覆盖率要求（防漏扫）：
+Fixed patrol order:
 
-- 必须先枚举全部已安装 Skill/MCP 目录，再逐目录扫描依赖文件
-- 报告中必须给出：安装目录总数、已扫描目录数、依赖文件总数、成功解析文件数、失败文件数
-- 若覆盖不足或解析失败，必须输出告警
+1. Network reachability pre-check for `app-api.misteye.io` and `raw.githubusercontent.com`
+2. Credential pre-check for `MISTEYE_API_KEY`
+3. Upstream version check
+4. Required patrol of installed Skill/MCP dependency objects
+5. New version notice, if any
+6. Standard patrol summary
 
-## 5. 网络受限与降级策略（重点）
+Coverage requirements:
 
-如果你在 `isolated` 会话里运行 cron，经常会遇到网络或环境变量不继承问题。
+- Enumerate all installed Skill/MCP directories first, then scan dependency files directory by directory
+- The report must include total installed directories, scanned directories, total dependency files, successfully parsed files, and failed files
+- If coverage is incomplete or parsing fails, emit an alert
 
-本 Skill 的标准处理是：
+## 5. Network Restrictions and Degraded Mode
 
-- 网络不通 -> 输出 `【网络连通性告警】`，标记 `degraded`
-- 凭据缺失 -> 输出 `【凭据缺失告警】`，标记 `degraded`
-- `degraded` 下允许继续做本地依赖文件统计，但**禁止伪造“检测成功”**
-- API `safe=true` 且 `matches=[]` 仅表示未命中情报库，禁止写成“Clean/无风险/安全通过”
-- 供应链包未命中时可提示用户是否到对应生态的官方包源/注册表查看包元数据（如 npm registry、PyPI、NuGet、RubyGems、pkg.go.dev、crates.io）；未经用户同意不自动打开或查询
+If cron runs in an `isolated` session, network access or environment variable inheritance may fail.
 
-OpenClaw 默认推荐用 `--session "shared"` 跑该任务，`isolated` 仅作为备选模式。OpenClaw 和 Hermes 只作为定时任务执行器，不作为 MistEye API key 的主存储位置。
+Standard handling:
 
-## 6. 凭据管理（禁止明文硬编码）
+- No network access -> output `【network connectivity alert】` and mark the result as `degraded`
+- Missing credentials -> output `【credential missing alert】` and mark the result as `degraded`
+- In `degraded` mode, local dependency file statistics are still allowed, but do not claim a successful detection
+- `safe=true` with `matches=[]` only means there was no intelligence match; do not describe it as "clean", "risk-free", or "safe"
+- If a supply-chain package does not match, you may ask the user whether they want to check metadata in the official ecosystem source, such as npm, PyPI, NuGet, RubyGems, pkg.go.dev, or crates.io; do not query it automatically without consent
 
-禁止把 API Key 明文写进 cron payload/message/聊天日志/命令历史。
+OpenClaw defaults to `--session "shared"` for this task. Use `isolated` only as a fallback. OpenClaw and Hermes are task executors only; they are not the primary storage location for the MistEye API key.
 
-如果没有 API key：
+## 6. Credential Management
 
-- 打开 `https://app.misteye.io/api-keys` 获取或管理 key
-- 如果没有 MistEye 账号，先注册，再创建 API key
+Do not hardcode the API key in cron payloads, messages, chat logs, or command history.
 
-推荐一次性初始化：
+If you do not have an API key:
+
+- Open `https://app.misteye.io/api-keys` to get or manage one
+- If you do not have a MistEye account, register first and then create an API key
+
+Recommended one-time setup:
 
 ```bash
 mkdir -p "${MISTEYE_CONFIG_DIR:-$HOME/.config/misteye}"
@@ -97,35 +101,35 @@ chmod 600 "${MISTEYE_CONFIG_DIR:-$HOME/.config/misteye}/api_key"
 unset MISTEYE_API_KEY
 ```
 
-巡检时凭据加载顺序：
+Credential lookup order during patrol:
 
-1. 环境变量 `MISTEYE_API_KEY`
-2. `${MISTEYE_CONFIG_DIR}/api_key`（当 `MISTEYE_CONFIG_DIR` 已设置）
+1. Environment variable `MISTEYE_API_KEY`
+2. `${MISTEYE_CONFIG_DIR}/api_key` when `MISTEYE_CONFIG_DIR` is set
 3. `$HOME/.config/misteye/api_key`
 
-## 7. 提取规则（防误检）
+## 7. Extraction Rules
 
-- 检测对象只能从“实际扫描到的依赖文件原文”提取
-- 每个对象必须有来源证据（文件路径 + 行号或字段路径）
-- 禁止用预置生态域名清单补全（例如默认加入 `pypi.org`、`npmjs.org` 等）
-- 禁止只检测 `pypi.org/files.pythonhosted.org` 这类公共域名来宣称“依赖已扫描”
-- 每个依赖条目都必须先做一次供应链包直查；可识别生态时使用 `package:npm` / `package:pypi` / `package:nuget` / `package:rubygems` / `package:go` / `package:cratesio`
-- 只有依赖原文存在显式 url/domain/email/hash 时，才追加这些对象检测（不能替代供应链包直查）
-- 硬约束：`dependency_package_detect_count >= dependency_item_count`，否则必须输出 `【巡检覆盖不足告警】`
-- 只有空值/注释/异常损坏等无法形成有效依赖字符串时，才计入 `unresolved_source`
+- Detection targets must come only from the raw text of files that were actually scanned
+- Every target must have source evidence, such as a file path plus a line number or field path
+- Do not fill gaps with a predefined list of ecosystem domains
+- Do not claim dependency scanning is complete by checking only public domains such as `pypi.org` or `npmjs.org`
+- Each dependency item must first receive a direct supply-chain package lookup; when the ecosystem is identifiable, use `package:npm`, `package:pypi`, `package:nuget`, `package:rubygems`, `package:go`, or `package:cratesio`
+- Only add `url`, `domain`, `email`, or `hash` detections when they appear explicitly in the dependency source text; they do not replace package lookup
+- Hard rule: `dependency_package_detect_count >= dependency_item_count`; otherwise output `【coverage insufficient alert】`
+- Only empty values, comments, or invalid broken input should count as `unresolved_source`
 
-## 8. 任务模板（简版）
+## 8. Task Template
 
-### OpenClaw（推荐 shared）
+### OpenClaw
 
 ```bash
 openclaw cron add \
   --name "misteye-dependency-patrol" \
-  --description "每晚安全巡检" \
+  --description "Nightly security patrol" \
   --cron "0 3 * * *" \
   --tz "Asia/Shanghai" \
   --session "shared" \
-  --message "先做网络连通性预检和 MISTEYE_API_KEY 凭据预检；再做版本检查；再巡检已安装 Skill/MCP 的依赖声明。必须逐项解析 dependency_id，并对每个依赖先执行供应链包直查（优先 package:* 类型）；若依赖原文存在显式 url/domain/email/hash 再追加检测。仅检测公共仓库域名不算完成。输出 dependency_item_count 与 dependency_package_detect_count；若前者大于后者，输出【巡检覆盖不足告警】并标记 degraded。网络或凭据不可用时输出告警并标记 degraded。" \
+  --message "Run the network reachability pre-check and the MISTEYE_API_KEY credential pre-check first. Then run the version check. Then patrol the dependency declarations of installed Skill/MCP items. Parse dependency_id one by one, and for each dependency run a direct supply-chain package lookup first, preferably with a package:* type. If the dependency source contains explicit url, domain, email, or hash values, add those detections afterward. Checking only the public repository domain is not enough. Output dependency_item_count and dependency_package_detect_count. If dependency_item_count is greater than dependency_package_detect_count, output 【coverage insufficient alert】 and mark the result as degraded. If network or credentials are unavailable, output the corresponding alert and mark the result as degraded." \
   --announce \
   --channel <channel> \
   --to <your-chat-id> \
@@ -137,13 +141,13 @@ openclaw cron add \
 
 ```bash
 hermes cron create "0 3 * * *" \
-  "先做网络连通性预检和 MISTEYE_API_KEY 凭据预检；再做版本检查；再巡检已安装 Skill/MCP 的依赖声明。必须逐项解析 dependency_id，并对每个依赖先执行供应链包直查（优先 package:* 类型）；若依赖原文存在显式 url/domain/email/hash 再追加检测。仅检测公共仓库域名不算完成。输出 dependency_item_count 与 dependency_package_detect_count；若前者大于后者，输出【巡检覆盖不足告警】并标记 degraded。网络或凭据不可用时输出告警并标记 degraded。" \
+  "Run the network reachability pre-check and the MISTEYE_API_KEY credential pre-check first. Then run the version check. Then patrol the dependency declarations of installed Skill/MCP items. Parse dependency_id one by one, and for each dependency run a direct supply-chain package lookup first, preferably with a package:* type. If the dependency source contains explicit url, domain, email, or hash values, add those detections afterward. Checking only the public repository domain is not enough. Output dependency_item_count and dependency_package_detect_count. If dependency_item_count is greater than dependency_package_detect_count, output 【coverage insufficient alert】 and mark the result as degraded. If network or credentials are unavailable, output the corresponding alert and mark the result as degraded." \
   --name "misteye-dependency-patrol" \
   --deliver origin
 ```
 
-## 9. 相关文件
+## 9. Related Files
 
-- 规则主文件：`SKILL.md`
-- API 说明：`references/api.md`
-- UI 元数据：`agents/openai.yaml`
+- Main rules file: `SKILL.md`
+- API docs: `references/api.md`
+- UI metadata: `agents/openai.yaml`

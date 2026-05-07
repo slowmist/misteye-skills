@@ -1,138 +1,138 @@
 ---
 name: misteye-security-check
-description: 这是 MistEye 安全前置闸门技能。触发于依赖安装前风险检测（含 Skill/MCP 依赖清单）、域名或 URL 访问前安全检查、IoC 恶意检测与供应链风险拦截，尤其包含“帮我看一下这个地址/网站”的常见问法。强制使用 `https://app-api.misteye.io/functions/v1/detect`；在依赖与外链场景中优先级最高。API 返回 `safe=false` 或存在 `matches` 时必须阻断并明确“已拦截”；仅在首次安装完成后提醒用户可开启 OpenClaw 或 Hermes 的每日巡检（默认一天一次）。
+description: This is the MistEye security gate skill. It is triggered by pre-installation risk checks (including Skill/MCP dependency manifests), pre-access security checks for domains or URLs, IoC malicious detection, and supply-chain risk blocking, especially for common requests such as "take a look at this address/website." It must use `https://app-api.misteye.io/functions/v1/detect`; in dependency and external-link scenarios it has the highest priority. If the API returns `safe=false` or any `matches`, the action must be blocked and explicitly reported as "blocked". Only after the first installation is complete should the user be reminded that daily patrols can be enabled with OpenClaw or Hermes (default once per day).
 metadata:
-  version: "1.4.20"
+  version: "1.4.21"
   upstream_repo: "https://github.com/slowmist/misteye-skills"
   upstream_skill_candidates:
     - "https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md"
     - "https://raw.githubusercontent.com/slowmist/misteye-skills/master/SKILL.md"
 ---
 
-# MistEye 安全前置闸门
+# MistEye Security Gate
 
-## 核心规则
+## Core Rules
 
-- 唯一检测接口：`POST https://app-api.misteye.io/functions/v1/detect`
-- 唯一认证方式：`x-api-key` 请求头（建议使用 `MISTEYE_API_KEY` 环境变量）
-- 官方文档：`https://app.misteye.io/api-docs`
-- 当前可用检测类型：`ip`、`ip:port`、`domain`、`url`、`email`、`file_hash`、`md5`、`sha1`、`sha256`、`package:npm`、`package:pypi`、`package:nuget`、`package:rubygems`、`package:go`、`package:cratesio`
-- 官方标记为 Coming Soon 的类型（如 `repo:*`、`extension:*`、`ai-tool:*`、`mobile-app:*`）不得作为硬门禁唯一依据
-- 最高优先级场景：依赖安装前检查、域名或 URL 访问前检查
-- Skill/MCP 安装场景只检查“依赖安装库相关对象”，不对 Skill/MCP 本体做恶意判定
-- 每日巡检第一步：先检查上游仓库是否有新版本，并在发现新版本时强提醒
-- 每日巡检必须包含“已安装 Skill/MCP 的依赖对象扫描”（不是可选项）
-- 每日巡检在做任何外部请求前，必须先做网络连通性预检（针对 `app-api.misteye.io` 与 `raw.githubusercontent.com`）
-- 每日巡检必须做 `MISTEYE_API_KEY` 凭据预检；禁止在 cron payload/message 明文硬编码 API Key
+- Single detection endpoint: `POST https://app-api.misteye.io/functions/v1/detect`
+- Single authentication method: the `x-api-key` request header (the `MISTEYE_API_KEY` environment variable is recommended)
+- Official docs: `https://app.misteye.io/api-docs`
+- Currently available detection types: `ip`, `ip:port`, `domain`, `url`, `email`, `file_hash`, `md5`, `sha1`, `sha256`, `package:npm`, `package:pypi`, `package:nuget`, `package:rubygems`, `package:go`, `package:cratesio`
+- Types officially marked as Coming Soon (for example `repo:*`, `extension:*`, `ai-tool:*`, `mobile-app:*`) must not be used as the sole basis for a hard gate
+- Highest-priority scenarios: dependency installation pre-checks, and domain or URL access pre-checks
+- In Skill/MCP installation scenarios, only inspect "dependency-installation related objects" and do not classify the Skill/MCP itself as malicious
+- First step of daily patrol: check whether the upstream repository has a new version, and strongly remind the user when one is found
+- Daily patrol must include "scanning the dependencies of installed Skill/MCP items" (this is mandatory, not optional)
+- Before any external request during daily patrol, a network reachability pre-check must be performed first (for `app-api.misteye.io` and `raw.githubusercontent.com`)
+- Daily patrol must also perform an `MISTEYE_API_KEY` credential pre-check; never hardcode the API key in cron payloads or messages
 
-## 强制触发器（防漏检）
+## Trigger Rules (Prevent Missed Checks)
 
-出现以下任一情况，必须先做 MistEye 前置检测，再进入正文回答：
+If any of the following appear, MistEye detection must be performed before answering the main request:
 
-- 用户输入包含 URL（`http://`、`https://`）
-- 用户输入包含可识别域名（如 `example.com`）
-- 用户让 agent “看一下/分析/检查/访问/打开/下载”某个网站、地址、链接
+- The user input contains a URL (`http://` or `https://`)
+- The user input contains a recognizable domain name, such as `example.com`
+- The user asks the agent to "take a look at", "analyze", "check", "visit", "open", or "download" a website, address, or link
 
-高频口语触发示例（必须命中）：
+Common spoken trigger examples that must match:
 
-- `帮我看一下 https://...`
-- `这个地址安全吗`
-- `访问一下这个网站`
-- `看看这个链接是什么`
+- `take a look at https://...`
+- `is this address safe`
+- `visit this website`
+- `what is this link`
 
-执行约束：
+Execution constraints:
 
-1. 先同时检测 `url` 和 `domain`（domain 从 URL 提取）。
-2. 任一检测返回 `safe=false`、`matches` 非空、`error` 或 `no_check`，立即阻断并输出“已拦截”。
-3. 未输出检测结果前，禁止给出 HTTP 状态、站点介绍、功能分析等正文内容。
+1. Detect `url` and `domain` together first (extract the domain from the URL).
+2. If any detection returns `safe=false`, a non-empty `matches`, `error`, or `no_check`, immediately block and output "blocked".
+3. Before the detection result is shown, do not provide HTTP status, site introduction, feature analysis, or any other main content.
 
-## GitHub 更新来源（巡检拉取地址）
+## GitHub Update Source (Patrol Download Locations)
 
-巡检做版本检查时，必须从以下 GitHub 地址拉取最新 `SKILL.md`，不得猜测其他仓库或分支：
+When performing version checks during patrol, the latest `SKILL.md` must be fetched from the following GitHub locations. Do not guess any other repository or branch:
 
-- 上游仓库：`https://github.com/slowmist/misteye-skills`
-- 最新下载地址候选（按顺序回退）：
-  1) `https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md`
-  2) `https://raw.githubusercontent.com/slowmist/misteye-skills/master/SKILL.md`
+- Upstream repository: `https://github.com/slowmist/misteye-skills`
+- Latest download candidates (fallback in order):
+  1. `https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md`
+  2. `https://raw.githubusercontent.com/slowmist/misteye-skills/master/SKILL.md`
 
-命中的 raw URL 同时作为巡检输出里的 `检查来源` 和 `最新下载地址`。
+The matched raw URL must also be used as `check source` and `latest download URL` in patrol output.
 
-## 优先级 0：依赖与域名访问前置检查
+## Priority 0: Dependency and Domain Access Pre-checks
 
-在以下场景，必须先完成 MistEye 检查，再允许进入安装、访问、下载、执行：
+In the following scenarios, MistEye checks must be completed before installation, access, download, or execution is allowed:
 
-1. 依赖安装前（供应链风险）
-2. 域名或 URL 访问前（外链风险）
-3. Skill/MCP 安装前（必须先扫描其内部依赖声明）
+1. Before dependency installation (supply-chain risk)
+2. Before domain or URL access (external-link risk)
+3. Before Skill/MCP installation (its internal dependency declarations must be scanned first)
 
-Skill/MCP 安装专项规则（必须）：
+Skill/MCP installation dedicated rules (mandatory):
 
-1. 仅扫描依赖声明文件与依赖来源对象；不对 Skill/MCP 的 `SKILL.md`、提示词文本、脚本逻辑本体做恶意判定。
-2. 在执行 `clawhub install`、`git clone` 后本地安装、或任何 Skill/MCP 安装动作前，先读取目标目录中的依赖文件。
-3. 必须“逐项解析依赖条目”（不是只看文件存在与否），为每个依赖条目生成唯一 `dependency_id`。
-4. 对每个依赖条目，必须先做一次供应链包直查；能识别生态时必须使用 `package:*` 类型（例如 PyPI 用 `package:pypi`、npm 用 `package:npm`）。
-5. 依赖有明确名称和版本时，优先把 target 规范化为 `name@version`；无法规范化时使用依赖原文作为 target，并保留 `dependency_raw` 证据。
-6. 若依赖条目含显式 URL/域名/哈希，再追加这些对象的检测；追加检测不能替代供应链包直查。
-7. 依赖扫描覆盖率硬约束：`dependency_package_detect_count >= dependency_item_count`，否则判定 `【巡检覆盖不足告警】` 并阻断。
-8. 任一对象返回 `safe=false` 或 `matches` 非空，立即阻断安装并输出“已拦截”。
-9. 任一依赖条目无法形成有效检测目标（空条目、注释条目、损坏格式），按 `no_check` 处理并阻断（“已拦截（未完成检测）”）。
-10. 仅当“每个依赖条目”都完成检测且未命中阻断条件时，才允许继续安装 Skill/MCP。
+1. Only scan dependency declaration files and dependency source objects. Do not classify the Skill/MCP's `SKILL.md`, prompt text, or script logic itself as malicious.
+2. Before any `clawhub install`, local installation after `git clone`, or any other Skill/MCP installation action, read the dependency files in the target directory first.
+3. Dependency items must be parsed one by one, not merely by checking whether a file exists. Create a unique `dependency_id` for each dependency item.
+4. For each dependency item, a supply-chain package direct lookup must be performed first. When the ecosystem can be identified, a `package:*` type must be used (for example, `package:pypi` for PyPI and `package:npm` for npm).
+5. If a dependency has a clear name and version, prefer normalizing the target to `name@version`. If normalization is not possible, use the raw dependency text as the target and keep `dependency_raw` as evidence.
+6. If the dependency item contains an explicit URL, domain, or hash, add those objects as additional detections; these additional detections do not replace the supply-chain package lookup.
+7. Hard coverage rule: `dependency_package_detect_count >= dependency_item_count`; otherwise determine `[coverage insufficient alert]` and block.
+8. If any object returns `safe=false` or a non-empty `matches`, immediately block installation and output "blocked".
+9. If any dependency item cannot produce a valid detection target (empty item, comment-only item, corrupted format), treat it as `no_check` and block with "blocked (detection incomplete)".
+10. Only when every dependency item has been checked and none of the blocking conditions are triggered may Skill/MCP installation continue.
 
-依赖直查规则（依赖仅有包名时）：
+Direct lookup rules (when the dependency has only a package name):
 
-- 检测目标优先使用供应链包 identity（`name@version`），并保留 `dependency_raw` 作为证据
-- `type` 选择优先级：
-  - Python 依赖：`type=package:pypi`
-  - npm/yarn/pnpm 依赖：`type=package:npm`
-  - NuGet 依赖：`type=package:nuget`
-  - RubyGems 依赖：`type=package:rubygems`
-  - Go module 依赖：`type=package:go`
-  - Cargo/crates.io 依赖：`type=package:cratesio`
-  - 若 `dependency_raw` 可识别为 URL：`type=url`
-  - 若可识别为域名：`type=domain`
-  - 若可识别为哈希：优先选择 `md5` / `sha1` / `sha256`，无法区分时用 `file_hash`
-  - 其余格式：使用最接近的 `package:*` 类型；无法识别生态时标记 `no_check`，不得伪装成已检测
+- Prefer the supply-chain package identity (`name@version`) as the target, and keep `dependency_raw` as evidence
+- `type` priority:
+  - Python dependencies: `type=package:pypi`
+  - npm/yarn/pnpm dependencies: `type=package:npm`
+  - NuGet dependencies: `type=package:nuget`
+  - RubyGems dependencies: `type=package:rubygems`
+  - Go module dependencies: `type=package:go`
+  - Cargo/crates.io dependencies: `type=package:cratesio`
+  - If `dependency_raw` can be recognized as a URL: `type=url`
+  - If it can be recognized as a domain: `type=domain`
+  - If it can be recognized as a hash: prefer `md5`, `sha1`, or `sha256`; if it cannot be distinguished, use `file_hash`
+  - For all other formats: use the closest `package:*` type; if the ecosystem cannot be identified, mark it as `no_check` and do not pretend a check was performed
 
-安装前输出要求（必须）：
+Pre-install output requirements (mandatory):
 
-- 必须输出 `依赖逐项扫描表`，至少包含：
+- The output must include a `dependency scan table`, containing at least:
   - `dependency_id`
-  - `dependency_raw`（原始依赖字符串）
-  - `evidence`（文件路径 + 行号/字段）
-  - `package_target`（规范化后的 `name@version` 或原始依赖字符串）
-  - `package_type`（`package:pypi` / `package:npm` / ...）
-  - `targets`（该条目额外对应的 url/domain/hash/email）
-  - `dependency_package_detected`（yes/no）
-  - `api_safe`（true/false/unknown）
+  - `dependency_raw` (original dependency string)
+  - `evidence` (file path + line number/field)
+  - `package_target` (normalized `name@version` or raw dependency string)
+  - `package_type` (`package:pypi` / `package:npm` / ...)
+  - `targets` (the url/domain/hash/email values additionally associated with this item)
+  - `dependency_package_detected` (`yes`/`no`)
+  - `api_safe` (`true`/`false`/`unknown`)
   - `matches_count`
-  - `result`（malicious/no_match/error/no_check）
-- 禁止用“仅检查公共仓库域名（如 pypi.org）”代替逐项依赖扫描。
+  - `result` (`malicious`/`no_match`/`error`/`no_check`)
+- Do not use "public repository domain only" checks (for example, only checking `pypi.org`) as a substitute for per-item dependency scanning.
 
-依赖检查覆盖清单（全生态）：
+Dependency check coverage list (full ecosystem):
 
-- Python：`requirements*.txt`、`pyproject.toml`、`Pipfile`、`poetry.lock`
-- JS/TS：`package.json`、`package-lock.json`、`pnpm-lock.yaml`、`yarn.lock`
-- Go：`go.mod`、`go.sum`
-- Rust：`Cargo.toml`、`Cargo.lock`
-- Java：`pom.xml`、`build.gradle`、`build.gradle.kts`
-- Ruby：`Gemfile`、`Gemfile.lock`
-- PHP：`composer.json`、`composer.lock`
-- .NET：`*.csproj`、`packages.lock.json`、`paket.dependencies`
+- Python: `requirements*.txt`, `pyproject.toml`, `Pipfile`, `poetry.lock`
+- JS/TS: `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
+- Go: `go.mod`, `go.sum`
+- Rust: `Cargo.toml`, `Cargo.lock`
+- Java: `pom.xml`, `build.gradle`, `build.gradle.kts`
+- Ruby: `Gemfile`, `Gemfile.lock`
+- PHP: `composer.json`, `composer.lock`
+- .NET: `*.csproj`, `packages.lock.json`, `paket.dependencies`
 
-域名访问前检查覆盖动作：
+Coverage for pre-access domain checks:
 
-- 打开或请求外部 URL（浏览、抓取、API 调用）
-- 下载文件（`curl`、`wget`、浏览器下载、脚本下载）
-- 拉取仓库（`git clone`）
-- 运行会访问外网的安装命令（`pip`、`npm`、`pnpm`、`yarn`、`go`、`cargo`、`composer`、`bundle`、`dotnet`、`maven`、`gradle`）
+- Opening or requesting external URLs (browsing, scraping, API calls)
+- Downloading files (`curl`, `wget`, browser downloads, script downloads)
+- Cloning repositories (`git clone`)
+- Running install commands that access the external network (`pip`, `npm`, `pnpm`, `yarn`, `go`, `cargo`, `composer`, `bundle`, `dotnet`, `maven`, `gradle`)
 
-未完成检测前，不得继续执行后续安装或访问动作。
+Do not continue with later installation or access actions before detection is complete.
 
-## API 调用标准
+## API Call Standard
 
-官方文档：`https://app.misteye.io/api-docs`
+Official docs: `https://app.misteye.io/api-docs`
 
-调用示例：
+Example call:
 
 ```bash
 curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
@@ -144,7 +144,7 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
   }'
 ```
 
-请求体：
+Request body:
 
 ```json
 {
@@ -153,12 +153,12 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
 }
 ```
 
-请求字段约束：
+Request field constraints:
 
-- `target`：必填字符串，服务端会 trim/lowercase，最长 2,000 字符。
-- `type`：必填字符串，必须是官方可用检测类型。
+- `target`: required string; the service trims/lowercases it; maximum 2,000 characters
+- `type`: required string; must be an officially available detection type
 
-响应格式（必须按此解析）：
+Response format (must be parsed exactly):
 
 ```json
 {
@@ -176,107 +176,107 @@ curl -X POST "https://app-api.misteye.io/functions/v1/detect" \
 }
 ```
 
-解析规则：
+Parsing rules:
 
-- `safe=false` 或 `matches.length > 0`：映射为内部结果 `malicious`，必须阻断。
-- `safe=true` 且 `matches=[]`：映射为内部结果 `no_match`，可继续但必须附风险提示。
-- HTTP 失败、网络失败、JSON 解析失败、响应缺少 `safe` 或 `matches`：映射为内部结果 `error`，必须阻断。
+- `safe=false` or `matches.length > 0`: map to internal result `malicious`; must block
+- `safe=true` and `matches=[]`: map to internal result `no_match`; it may continue, but a risk warning must be attached
+- HTTP failure, network failure, JSON parsing failure, or a response missing `safe` or `matches`: map to internal result `error`; must block
 
-错误码处理：
+Error code handling:
 
-- `400`：JSON、`target` 或 `type` 无效，按 `error` 阻断。
-- `401`：缺少或无效 `x-api-key`，按 `error` 阻断。
-- `403`：API key 无效、禁用或校验失败，按 `error` 阻断。
-- `413`：`target` 超过 2,000 字符，按 `error` 阻断。
-- `429`：达到 10 req/s 速率限制，按 `error` 阻断；如有 `Retry-After` 可等待后重试。
-- `500`：服务端异常，按 `error` 阻断。
+- `400`: invalid JSON, `target`, or `type`; block as `error`
+- `401`: missing or invalid `x-api-key`; block as `error`
+- `403`: invalid, disabled, or failed API key validation; block as `error`
+- `413`: `target` exceeds 2,000 characters; block as `error`
+- `429`: rate limit of 10 req/s reached; block as `error`; if `Retry-After` is present, wait and retry
+- `500`: server exception; block as `error`
 
-如果没有 API key：
+If there is no API key:
 
-- 直接告知当前检测未完成，属于高风险未确认状态
-- 引导用户提供 key 或设置 `MISTEYE_API_KEY`
-- 明确引导用户到 `https://app.misteye.io/api-keys` 获取/管理 API key
-- 若用户尚未注册 MistEye，先完成注册，再到上述页面创建 key
-- 不允许跳过检测继续执行高风险动作
+- Directly tell the user that the detection is incomplete and therefore in a high-risk unconfirmed state
+- Guide the user to provide a key or set `MISTEYE_API_KEY`
+- Clearly direct the user to `https://app.misteye.io/api-keys` to obtain/manage an API key
+- If the user is not yet registered with MistEye, they must register first, then create a key on the page above
+- Do not skip detection and continue with a high-risk action
 
-## 阻断决策矩阵
+## Blocking Decision Matrix
 
-| MistEye 状态 | 判定 | 动作 |
+| MistEye state | Decision | Action |
 |---|---|---|
-| `safe=false` 或 `matches.length > 0` | 已确认高风险 | **硬阻断**，明确输出“已拦截” |
-| `error` | 检测失败，高风险未确认 | **硬阻断**，明确输出“已拦截（未完成检测）” |
-| `no_check` | 未执行检测，高风险未确认 | **硬阻断**，明确输出“已拦截（未完成检测）” |
-| `safe=true` 且 `matches=[]` | 未命中情报库 | 可继续但必须附带风险提示，不得宣称绝对安全 |
+| `safe=false` or `matches.length > 0` | Confirmed high risk | **Hard block**, explicitly output "blocked" |
+| `error` | Detection failed, high risk remains unconfirmed | **Hard block**, explicitly output "blocked (detection incomplete)" |
+| `no_check` | Detection was not performed, high risk remains unconfirmed | **Hard block**, explicitly output "blocked (detection incomplete)" |
+| `safe=true` and `matches=[]` | No intelligence hit | It may continue, but a risk warning must be attached; do not claim absolute safety |
 
-未命中后的可选复核策略：
+Unmatched follow-up review strategy:
 
-- 当 API 返回 `safe=true` 且 `matches=[]` 时，必须说明“未命中情报库不等于安全确认”。
-- 对供应链包可提示用户：是否需要到对应生态的官方包源/注册表地址查看包元数据、版本、发布时间、维护者、仓库链接和下载量等信息。
-- 未经用户同意，不要为了人工复核自动打开、访问或查询任何官方包源页面。
-- 若用户要求复核，再对官方包源访问动作执行必要的 MistEye 前置检测或按当前环境规则处理。
-- 官方包源 URL 构造参考：
-  - npm：`https://registry.npmjs.org/<package>`（scope 包需 URL encode，如 `@scope/pkg` -> `%40scope%2Fpkg`）
-  - PyPI：`https://pypi.org/pypi/<package>/json`
-  - NuGet：`https://api.nuget.org/v3-flatcontainer/<lowercase-package>/index.json`
-  - RubyGems：`https://rubygems.org/api/v1/gems/<gem>.json`
-  - Go：`https://pkg.go.dev/<module>`
-  - crates.io：`https://crates.io/api/v1/crates/<crate>`
+- When the API returns `safe=true` and `matches=[]`, you must state that "no intelligence hit does not mean confirmed safety."
+- For supply-chain packages, you may suggest the user check the official package source or registry for metadata such as version, publish time, maintainer, repository link, and download counts
+- Do not automatically open, visit, or query any official package source page without user consent
+- If the user asks for a review, perform the necessary MistEye pre-checks before accessing the official package source, or follow the current environment rules
+- Official package source URL reference:
+  - npm: `https://registry.npmjs.org/<package>` (scope packages must be URL-encoded, for example `@scope/pkg` -> `%40scope%2Fpkg`)
+  - PyPI: `https://pypi.org/pypi/<package>/json`
+  - NuGet: `https://api.nuget.org/v3-flatcontainer/<lowercase-package>/index.json`
+  - RubyGems: `https://rubygems.org/api/v1/gems/<gem>.json`
+  - Go: `https://pkg.go.dev/<module>`
+  - crates.io: `https://crates.io/api/v1/crates/<crate>`
 
-强制话术要求：
+Mandatory wording:
 
-- 发生 `safe=false`、`matches.length > 0`、`error` 或 `no_check` 时，结果必须包含“已拦截”四个字。
-- 禁止使用弱化表达（如“你可以先继续看看”“应该没问题”）。
+- When `safe=false`, `matches.length > 0`, `error`, or `no_check` occurs, the result must contain the exact phrase "blocked"
+- Do not use softened expressions such as "you can continue for now" or "it should be fine"
 
-## 安装后一次性强提醒巡检（OpenClaw / Hermes）
+## One-Time Strong Patrol Reminder After Installation (OpenClaw / Hermes)
 
-当且仅当用户首次安装完成（或首次启用）时，必须追加一次提醒（OpenClaw 与 Hermes 二选一即可）：
+When and only when the user completes the first installation (or first enablement), one reminder must be added (either OpenClaw or Hermes is sufficient):
 
-- 可开启主动巡检（OpenClaw 或 Hermes）
-- 默认频率：每天一次
-- 重点是“如何开启”，不展开完整安全体系
-- 默认推荐“无脚本模式”（在 cron message 中直接执行巡检步骤）；如用户已有外部脚本也可接入（建议脚本名：`misteye-dependency-patrol.sh`），但本 skill 不内置 `.sh` 文件
-- 提醒触发条件：首次安装完成 / 首次启用
-- 禁止重复提醒：后续日常检测、普通问答、常规使用不再主动重复该提醒
-- 仅在用户明确要求“配置巡检/查看巡检命令”时再次给出巡检配置
+- Active patrol can be enabled (OpenClaw or Hermes)
+- Default cadence: once per day
+- The focus is on "how to enable it"; do not expand into the full security system
+- Default recommendation: "no script mode" (the patrol steps are written directly in the cron message); if the user already has an external script, it may also be integrated (suggested script name: `misteye-dependency-patrol.sh`), but this skill does not include a `.sh` file
+- Trigger condition: first installation completed / first enablement
+- Do not repeat the reminder: later daily checks, normal Q&A, and ordinary use should not trigger the reminder again
+- Only provide patrol configuration again when the user explicitly asks to "configure patrol" or "view patrol commands"
 
-每日巡检任务固定顺序（必须）：
+Daily patrol task order (mandatory):
 
-1. 先做网络连通性预检（必须）
-2. 再做凭据预检（`MISTEYE_API_KEY`）
-3. 版本更新检查（检查 `slowmist/misteye-skills`）
-4. 巡检已安装 Skill/MCP 的依赖对象（必须）
-5. 若检测到新版本，先输出更新提醒
-6. 再执行常规安全巡检
+1. First perform the network reachability pre-check (mandatory)
+2. Then perform the credential pre-check (`MISTEYE_API_KEY`)
+3. Version update check (check `slowmist/misteye-skills`)
+4. Patrol the dependencies of installed Skill/MCP items (mandatory)
+5. If a new version is detected, output the update reminder first
+6. Then perform the normal security patrol
 
-网络连通性预检规则（必须）：
+Network reachability pre-check rules (mandatory):
 
-- 预检目标：
+- Pre-check targets:
   - `https://app-api.misteye.io/functions/v1/detect`
   - `https://raw.githubusercontent.com/slowmist/misteye-skills/main/SKILL.md`
-- 若任一目标不可达，先输出 `【网络连通性告警】`，并进入“受限模式”：
-  - 版本检查标记为 `degraded`（非成功）
-  - MistEye 外部 API 检测标记为 `degraded`（非成功）
-  - 继续执行本地依赖文件枚举与统计，不得伪造检测成功
-- 受限模式必须给出修复建议（至少一条）：
-  - 将该巡检任务切换到 `--session \"shared\"`
-  - 为 cron 运行环境补齐代理（如 `HTTPS_PROXY` / `ALL_PROXY`）
-  - 放通 `app-api.misteye.io` 与 `raw.githubusercontent.com` 出口访问
+- If either target is unreachable, output `[network connectivity alert]` first, then enter "restricted mode":
+  - Version checks are marked `degraded` (not successful)
+  - MistEye external API detections are marked `degraded` (not successful)
+  - Continue local dependency file enumeration and statistics, but do not fake a successful detection
+- Restricted mode must provide at least one recovery suggestion:
+  - Switch the patrol task to `--session "shared"`
+  - Add proxy settings for the cron runtime, such as `HTTPS_PROXY` / `ALL_PROXY`
+  - Allow outbound access to `app-api.misteye.io` and `raw.githubusercontent.com`
 
-凭据预检规则（必须）：
+Credential pre-check rules (mandatory):
 
-- 凭据加载顺序：
-  1) 直接读取环境变量 `MISTEYE_API_KEY`
-  2) 若为空，尝试从本地受控文件读取（按顺序）：
-     - `${MISTEYE_CONFIG_DIR}/api_key`（当 `MISTEYE_CONFIG_DIR` 已设置）
+- Credential loading order:
+  1. Read the `MISTEYE_API_KEY` environment variable directly
+  2. If empty, try reading from the local controlled file in order:
+     - `${MISTEYE_CONFIG_DIR}/api_key` (when `MISTEYE_CONFIG_DIR` is set)
      - `$HOME/.config/misteye/api_key`
-- 文件安全要求：权限必须为 `600`（仅当前用户可读写）。
-- 若成功从文件读取，需在当前巡检会话中导出 `MISTEYE_API_KEY` 后再调用 MistEye API。
-- 若凭据仍不可用，必须输出 `【凭据缺失告警】`，并将 MistEye 检测标记为 `degraded`（不可标记成功）。
-- 若凭据缺失，提醒用户前往 `https://app.misteye.io/api-keys` 获取 key（未注册则先注册）。
-- 安全红线：禁止把 API Key 明文写进 cron payload、message、聊天日志、命令历史。
-- OpenClaw 与 Hermes 只作为定时任务执行器；不得把新凭据写入 OpenClaw/Hermes 私有目录。
+- File security requirement: permissions must be `600` (read/write for the current user only)
+- If the key is successfully read from file, export `MISTEYE_API_KEY` in the current patrol session before calling the MistEye API
+- If credentials are still unavailable, output `[credential missing alert]` and mark the MistEye check as `degraded` (it cannot be marked successful)
+- If credentials are missing, remind the user to go to `https://app.misteye.io/api-keys` to obtain the key (register first if not registered)
+- Security red line: do not write the API key in plain text into cron payloads, messages, chat logs, or command history
+- OpenClaw and Hermes are only cron executors; do not write the new credential into their private directories
 
-推荐一次性初始化（避免在 cron 中明文）：
+Recommended one-time initialization (to avoid plain text in cron):
 
 ```bash
 mkdir -p "${MISTEYE_CONFIG_DIR:-$HOME/.config/misteye}"
@@ -286,41 +286,41 @@ chmod 600 "${MISTEYE_CONFIG_DIR:-$HOME/.config/misteye}/api_key"
 unset MISTEYE_API_KEY
 ```
 
-版本更新检查规则（必须）：
+Version update check rules (mandatory):
 
-- 读取本地版本：当前技能 `SKILL.md` frontmatter 中 `metadata.version`
-- 读取远端版本：按“GitHub 更新来源（巡检拉取地址）”中的最新下载地址候选顺序尝试，并解析远端 `metadata.version`
-- 仓库地址：使用“GitHub 更新来源（巡检拉取地址）”中的上游仓库
-- 版本比较规则：使用语义化版本（`major.minor.patch`）比较；远端高于本地即判定为“有新版本”
-- 比较结果处理：
-  - 远端版本 > 本地版本：输出 `【版本更新提醒】`，包含本地版本、远端版本、仓库地址、最新下载地址
-  - 远端版本 = 本地版本：输出“版本已是最新”
-  - 版本检查失败（网络/解析失败）：输出 `【版本检查失败提醒】`，继续执行安全巡检
+- Read local version: `metadata.version` in the current skill's `SKILL.md` frontmatter
+- Read remote version: try the latest download candidates in the "GitHub Update Source (Patrol Download Locations)" section in order, and parse the remote `metadata.version`
+- Repository URL: use the upstream repository from the "GitHub Update Source (Patrol Download Locations)" section
+- Version comparison rule: use semantic versioning (`major.minor.patch`); if the remote version is greater than the local version, treat it as "a new version is available"
+- Result handling:
+  - Remote version > local version: output `[version update reminder]`, including the local version, remote version, repository URL, and latest download URL
+  - Remote version = local version: output "version is already up to date"
+  - Version check failure (network or parsing failure): output `[version check failed reminder]` and continue the security patrol
 
-版本检查输出模板（巡检时必须包含）：
+Version check output template (must be included during patrol):
 
 ```text
-[版本检查]
-本地版本：<本地 SKILL.md frontmatter metadata.version>
-远端版本：<远端 SKILL.md frontmatter metadata.version | unknown>
-上游仓库：<GitHub 更新来源中的上游仓库>
-检查来源：<命中的 GitHub raw URL | 全部失败>
-最新下载地址：<命中的 GitHub raw URL | unknown>
-版本结论：<有新版本 / 版本已是最新 / 版本检查失败>
-动作：<先提醒更新 / 继续巡检 / 标记 degraded 后继续本地统计>
+[Version Check]
+Local version: <local SKILL.md frontmatter metadata.version>
+Remote version: <remote SKILL.md frontmatter metadata.version | unknown>
+Upstream repository: <upstream repository from GitHub Update Source (Patrol Download Locations)>
+Check source: <matched GitHub raw URL | all failed>
+Latest download URL: <matched GitHub raw URL | unknown>
+Version conclusion: <new version available / version is already up to date / version check failed>
+Action: <warn first / continue patrol / mark degraded and continue local statistics>
 ```
 
-已安装 Skill/MCP 依赖巡检规则（必须）：
+Installed Skill/MCP dependency patrol rules (mandatory):
 
-- 巡检目录（按存在情况执行）：
+- Patrol directories (depending on what exists):
   - `~/.agents/skills`
   - `~/.codex/skills`
   - `$CODEX_HOME/skills`
-- 覆盖率要求（防漏扫）：
-  - 必须先枚举巡检目录下所有已安装 Skill/MCP 目录，再逐目录扫描依赖文件。
-  - 输出必须包含：`已安装目录总数`、`已扫描目录数`、`发现依赖文件总数`、`成功解析文件数`、`解析失败文件数`。
-  - 若 `已扫描目录数 < 已安装目录总数` 或存在解析失败文件，必须输出 `【巡检覆盖不足告警】` 并附失败清单。
-- 只扫描依赖声明文件，不扫描 Skill/MCP 本体逻辑：
+- Coverage requirements (prevent missed scans):
+  - First enumerate all installed Skill/MCP directories under the patrol roots, then scan dependency files directory by directory
+  - The output must include: `total installed directories`, `scanned directories`, `total dependency files found`, `successfully parsed files`, and `failed files`
+  - If `scanned directories < total installed directories` or any file fails to parse, output `[coverage insufficient alert]` and attach the failure list
+- Only scan dependency declaration files, not the Skill/MCP implementation itself:
   - Python: `requirements*.txt`, `pyproject.toml`, `Pipfile`, `poetry.lock`
   - JS/TS: `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`
   - Go: `go.mod`, `go.sum`
@@ -329,44 +329,44 @@ unset MISTEYE_API_KEY
   - Ruby: `Gemfile`, `Gemfile.lock`
   - PHP: `composer.json`, `composer.lock`
   - .NET: `*.csproj`, `packages.lock.json`, `paket.dependencies`
-- 从依赖文件中提取并去重可检测对象：
-  - 供应链包（优先使用 `package:npm` / `package:pypi` / `package:nuget` / `package:rubygems` / `package:go` / `package:cratesio`）
-  - URL（`type=url`）
-  - 域名（`type=domain`）
-  - Email（`type=email`，若存在）
-  - 文件哈希（优先 `md5` / `sha1` / `sha256`，无法区分时 `file_hash`）
-- 提取约束（防误检）：
-  - 第一阶段（必做）：每个依赖条目都必须先执行一次供应链包直查（`source_kind=dependency_package`）。
-  - 第二阶段（补充）：仅在依赖原文存在显式 url/domain/email/hash 时，追加这些对象检测；每个对象必须有来源证据（文件路径 + 行号或字段路径）。
-  - 禁止使用预置生态域名清单做补全（例如默认塞入 `pypi.org`、`npmjs.org`、`crates.io` 等），除非这些值确实出现在扫描文件中。
-  - 禁止只检测“仓库公共域名”来代替依赖逐项扫描（例如仅检测 `pypi.org` / `files.pythonhosted.org`）。
-  - 只有在“依赖目标无法提取或无效（空值/注释/异常损坏）”的情况下，才允许计入 `no_check`（原因：`unresolved_source`），不得伪装成已检测通过。
-- 覆盖率闸门（必须）：
-  - `dependency_package_detect_count < dependency_item_count` 时必须输出 `【巡检覆盖不足告警】` 并标记 `degraded`，不得宣称巡检完成。
-- 对每个对象调用 MistEye detect。
-- 巡检输出必须包含统计：
-  - 扫描到的依赖文件数
-  - 提取的可检测对象数（按 package/url/domain/email/hash 分组）
-  - 供应链包直查检测对象数（`dependency_package`）
-  - `unresolved_source` 数量（无法映射到 package/url/domain/email/hash 的依赖）
-  - `safe=false` 或 `matches` 非空的命中数与对象清单
-  - `error/no_check` 数量
-- 巡检处理策略：
-  - `safe=false` 或 `matches` 非空：输出 `【依赖巡检高危告警】`，要求立即人工复核并暂停相关安装/访问流程
-  - `error/no_check`：输出 `【依赖巡检未完成提醒】`，要求补检，不得宣称“安全”
-  - `safe=true` 且 `matches=[]`：仅表示未命中情报库，继续巡检并附风险提示
-  - 未命中语义约束：禁止写“Clean/安全通过/无风险”，只能写“未命中情报库（仍需风险提示）”
+- Extract and deduplicate detectable objects from the dependency files:
+  - Supply-chain packages (prefer `package:npm`, `package:pypi`, `package:nuget`, `package:rubygems`, `package:go`, `package:cratesio`)
+  - URL (`type=url`)
+  - Domain (`type=domain`)
+  - Email (`type=email`, if present)
+  - File hashes (prefer `md5`, `sha1`, `sha256`; if the type cannot be distinguished, use `file_hash`)
+- Extraction constraints (prevent false positives):
+  - First stage (mandatory): every dependency item must first perform a supply-chain package direct lookup (`source_kind=dependency_package`)
+  - Second stage (supplementary): only when the raw dependency text explicitly contains url/domain/email/hash, add those detections; each object must have source evidence (file path + line number or field path)
+  - Do not use a preset ecosystem domain list to fill gaps (for example, do not auto-insert `pypi.org`, `npmjs.org`, `crates.io`) unless those values actually appear in the scanned file
+  - Do not replace per-item dependency scanning with checking only a public repository domain (for example, only `pypi.org` / `files.pythonhosted.org`)
+  - Only when the dependency target cannot be extracted or is invalid (empty value / comment / corrupted input) may it be counted as `no_check` (reason: `unresolved_source`); do not pretend a check was completed
+- Coverage gate (mandatory):
+  - When `dependency_package_detect_count < dependency_item_count`, output `[coverage insufficient alert]` and mark `degraded`; do not claim the patrol is complete
+- Call MistEye detect for every object
+- Patrol output must include statistics:
+  - Number of dependency files scanned
+  - Number of detectable objects extracted (grouped by package/url/domain/email/hash)
+  - Number of direct supply-chain lookup objects (`dependency_package`)
+  - Number of `unresolved_source` items (dependencies that cannot be mapped to package/url/domain/email/hash)
+  - Number of hits with `safe=false` or non-empty `matches`, plus the object list
+  - Number of `error/no_check` items
+- Patrol handling:
+  - `safe=false` or non-empty `matches`: output `[high-risk dependency patrol alert]`, require immediate manual review, and pause the related installation/access flow
+  - `error/no_check`: output `[dependency patrol incomplete reminder]`, request a re-check, and do not claim it is "safe"
+  - `safe=true` and `matches=[]`: indicates only that no intelligence hit was found; continue the patrol and attach a risk warning
+  - No-hit wording constraint: do not write "Clean / passed safe / no risk"; only write "no intelligence hit (risk warning still required)"
 
-推荐模板 A（OpenClaw）：
+Recommended template A (OpenClaw):
 
 ```bash
 openclaw cron add \
   --name "misteye-dependency-patrol" \
-  --description "每晚安全巡检" \
+  --description "Nightly security patrol" \
   --cron "0 3 * * *" \
   --tz "Asia/Shanghai" \
   --session "shared" \
-  --message "按顺序执行每日巡检：1) 网络连通性预检；2) MISTEYE_API_KEY 凭据预检；3) 版本检查；4) 枚举并扫描所有已安装 Skill/MCP 依赖文件；5) 对每个 dependency_id 先执行供应链包直查（优先 package:npm/package:pypi/package:nuget/package:rubygems/package:go/package:cratesio），若依赖原文含显式 url/domain/email/hash 再追加检测；6) 输出 dependency_item_count 与 dependency_package_detect_count，若前者大于后者输出【巡检覆盖不足告警】并标记 degraded；7) 输出 safe=false 或 matches 非空的命中、error/no_check 与对象清单。禁止只检测公共仓库域名；未命中只能写“未命中情报库（仍需风险提示）”。" \
+  --message "Execute the daily patrol in order: 1) network reachability pre-check; 2) MISTEYE_API_KEY credential pre-check; 3) version check; 4) enumerate and scan all installed Skill/MCP dependency files; 5) for each dependency_id, first perform a supply-chain package direct lookup (prefer package:npm/package:pypi/package:nuget/package:rubygems/package:go/package:cratesio), and if the raw dependency contains explicit url/domain/email/hash, add those detections; 6) output dependency_item_count and dependency_package_detect_count, and if the former is greater than the latter, output [coverage insufficient alert] and mark degraded; 7) output hits with safe=false or non-empty matches, and list error/no_check objects. Do not replace per-item dependency scanning with a public-domain-only check; when there is no hit, only write 'no intelligence hit (risk warning still required)'." \
   --announce \
   --channel <channel> \
   --to <your-chat-id> \
@@ -374,16 +374,16 @@ openclaw cron add \
   --thinking off
 ```
 
-OpenClaw 隔离会话备选模板（仅在必须 `isolated` 时使用）：
+OpenClaw isolated-session fallback template (use only when `isolated` is required):
 
 ```bash
 openclaw cron add \
   --name "misteye-dependency-patrol" \
-  --description "每晚安全巡检（isolated）" \
+  --description "Nightly security patrol (isolated)" \
   --cron "0 3 * * *" \
   --tz "Asia/Shanghai" \
   --session "isolated" \
-  --message "按顺序执行每日巡检：先做网络连通性预检；再做 MISTEYE_API_KEY 凭据预检（环境变量缺失时，只从 MistEye 专用配置目录读取：默认 ~/.config/misteye/api_key，可用 MISTEYE_CONFIG_DIR 覆盖）；随后枚举所有已安装 Skill/MCP 目录并逐目录扫描依赖文件。必须对每个 dependency_id 先执行供应链包直查（优先 package:* 类型），再对原文存在的 url/domain/email/hash 做补充检测。输出 dependency_item_count 与 dependency_package_detect_count；若前者大于后者，输出【巡检覆盖不足告警】并标记 degraded。若网络或凭据任一不可用，输出对应告警并进入受限模式（仅本地覆盖率统计，外部检测标记 degraded）。未命中只能写“未命中情报库（仍需风险提示）”。" \
+  --message "Execute the daily patrol in order: first the network reachability pre-check; then the MISTEYE_API_KEY credential pre-check (if the environment variable is missing, read only from the MistEye dedicated config directory: default ~/.config/misteye/api_key, overridable with MISTEYE_CONFIG_DIR); then enumerate all installed Skill/MCP directories and scan dependency files directory by directory. You must first perform a supply-chain package direct lookup for each dependency_id (prefer package:* types), and then add checks for url/domain/email/hash only when they appear in the raw text. Output dependency_item_count and dependency_package_detect_count; if the former is greater than the latter, output [coverage insufficient alert] and mark degraded. If either network or credentials are unavailable, output the corresponding alert and enter restricted mode (local coverage statistics only, external detection marked degraded). When there is no hit, only write 'no intelligence hit (risk warning still required)'." \
   --announce \
   --channel <channel> \
   --to <your-chat-id> \
@@ -391,112 +391,112 @@ openclaw cron add \
   --thinking off
 ```
 
-推荐模板 B（Hermes CLI）：
+Recommended template B (Hermes CLI):
 
 ```bash
 hermes cron create "0 3 * * *" \
-  "按顺序执行每日巡检：1) 网络连通性预检；2) MISTEYE_API_KEY 凭据预检；3) 版本检查；4) 枚举并扫描所有已安装 Skill/MCP 的依赖文件；5) 对每个 dependency_id 先执行供应链包直查（优先 package:* 类型），再补充检测原文显式 url/domain/email/hash；6) 输出 dependency_item_count 与 dependency_package_detect_count，若前者大于后者输出【巡检覆盖不足告警】；7) 输出 safe=false 或 matches 非空的命中、error/no_check 汇总并标记 degraded（如适用）；未命中禁止写成安全通过。" \
+  "Execute the daily patrol in order: 1) network reachability pre-check; 2) MISTEYE_API_KEY credential pre-check; 3) version check; 4) enumerate and scan all installed Skill/MCP dependency files; 5) for each dependency_id, first perform a supply-chain package direct lookup (prefer package:* types), then add checks for explicit url/domain/email/hash from the raw text; 6) output dependency_item_count and dependency_package_detect_count, and if the former is greater than the latter output [coverage insufficient alert]; 7) output hits with safe=false or non-empty matches, plus error/no_check summaries, and mark degraded when applicable; do not describe no hits as safe." \
   --name "misteye-dependency-patrol" \
   --deliver origin
 ```
 
-推荐模板 C（Hermes 聊天命令）：
+Recommended template C (Hermes chat command):
 
 ```text
-/cron add "0 3 * * *" "按顺序执行每日巡检：1) 网络连通性预检；2) MISTEYE_API_KEY 凭据预检；3) 版本检查；4) 枚举并扫描所有已安装 Skill/MCP 的依赖文件；5) 对每个 dependency_id 先执行供应链包直查（优先 package:* 类型），再补充检测原文显式 url/domain/email/hash；6) 输出 dependency_item_count 与 dependency_package_detect_count，若前者大于后者输出【巡检覆盖不足告警】；7) 输出 safe=false 或 matches 非空的命中、error/no_check 汇总并标记 degraded（如适用）；未命中禁止写成安全通过。" --name "misteye-dependency-patrol" --deliver origin
+/cron add "0 3 * * *" "Execute the daily patrol in order: 1) network reachability pre-check; 2) MISTEYE_API_KEY credential pre-check; 3) version check; 4) enumerate and scan all installed Skill/MCP dependency files; 5) for each dependency_id, first perform a supply-chain package direct lookup (prefer package:* types), then add checks for explicit url/domain/email/hash from the raw text; 6) output dependency_item_count and dependency_package_detect_count, and if the former is greater than the latter output [coverage insufficient alert]; 7) output hits with safe=false or non-empty matches, plus error/no_check summaries, and mark degraded when applicable; do not describe no hits as safe." --name "misteye-dependency-patrol" --deliver origin
 ```
 
-Hermes 使用前置条件（必须提醒）：
+Hermes prerequisites (must be reminded):
 
-- 需要先保证 Hermes gateway 在运行（如 `hermes gateway install` 后以服务运行，或直接运行 `hermes gateway`）
-- 如用户已有 OpenClaw 环境，可先执行 `hermes claw migrate` 迁移既有配置，再创建巡检任务
-- 创建后可用 `hermes cron list` / `hermes cron status` 确认生效
-- 可用 `hermes cron run <job_id>` 做一次立即回放验证
+- Hermes gateway must be running first (for example, run `hermes gateway install` and then run the service, or run `hermes gateway` directly)
+- If the user already has an OpenClaw environment, they may first run `hermes claw migrate` to migrate existing configuration, then create the patrol task
+- After creation, use `hermes cron list` / `hermes cron status` to confirm it is active
+- Use `hermes cron run <job_id>` for an immediate replay verification
 
-提醒文案中必须出现：`默认建议每天巡检 1 次`。
+The reminder text must include: `default recommendation is once per day`.
 
-## 高敏感提示词模板
+## High-Sensitivity Prompt Templates
 
-以下模板用于高风险场景输出，优先级高于普通解释：
+The following templates are used for high-risk scenarios and have higher priority than ordinary explanations:
 
-### 模板 A：依赖安装前
+### Template A: Before dependency installation
 
 ```text
-[安全前置闸门]
-检测对象：<依赖名/包源域名/锁文件来源>
-检测状态：<safe=false|matches_count_positive|error|no_check|safe=true matches_count=0>
-结论：<已拦截 / 可继续（附风险）>
+[Security Gate]
+Detection target: <dependency name / package registry domain / lockfile source>
+Detection status: <safe=false|matches_count_positive|error|no_check|safe=true matches_count=0>
+Conclusion: <blocked / continue (with risk)>
 
-规则说明：
-1) 依赖安装属于供应链高风险动作，必须先过 MistEye。
-2) 当前状态为 <...>，根据硬阻断策略：<执行阻断或附条件放行>。
-3) 下一步：<提供可执行动作，如补充 API key、重试检测、替换依赖源>。
+Rules:
+1) Dependency installation is a high-risk supply-chain action and must pass MistEye first.
+2) The current status is <...>. According to the hard-block policy: <block or allow with conditions>.
+3) Next step: <provide an actionable step, such as adding an API key, retrying detection, or replacing the dependency source>.
 ```
 
-### 模板 B：域名或 URL 访问前
+### Template B: Before domain or URL access
 
 ```text
-[安全前置闸门]
-检测对象：<domain/url>
-检测状态：<safe=false|matches_count_positive|error|no_check|safe=true matches_count=0>
-结论：<已拦截 / 可继续（附风险）>
+[Security Gate]
+Detection target: <domain/url>
+Detection status: <safe=false|matches_count_positive|error|no_check|safe=true matches_count=0>
+Conclusion: <blocked / continue (with risk)>
 
-规则说明：
-1) 外链访问与下载属于高风险入口，必须先过 MistEye。
-2) 当前状态为 <...>，根据硬阻断策略：<执行阻断或附条件放行>。
-3) 下一步：<提供可执行动作，如更换域名、补充 API key、重试检测>。
+Rules:
+1) External links and downloads are high-risk entry points and must pass MistEye first.
+2) The current status is <...>. According to the hard-block policy: <block or allow with conditions>.
+3) Next step: <provide an actionable step, such as changing the domain, adding an API key, or retrying detection>.
 ```
 
-### 模板 C：安装完成后提醒
+### Template C: Reminder after installation
 
 ```text
-首次安装已完成。建议开启主动巡检：默认每天 1 次。
-巡检会先检查 https://github.com/slowmist/misteye-skills 是否有新版本；如有更新会先提醒你再继续巡检。
-巡检主要会做三件事：1) 检查版本更新；2) 扫描你已安装 Skill/MCP 的依赖声明并优先用 package:* 做供应链包直查，再对提取的 url/domain/email/hash 做 MistEye 检测；3) 把结果集中汇报。
-主要作用：把“手动才会做”的安全检查变成“每天自动做”，更早发现供应链投毒、恶意外链和规则失效导致的漏检风险。
+The first installation has completed. You should enable active patrol: the default recommendation is once per day.
+The patrol will first check whether https://github.com/slowmist/misteye-skills has a new version; if there is an update, it will warn you before continuing the patrol.
+The patrol mainly does three things: 1) checks for version updates; 2) scans the dependency declarations of installed Skill/MCP items and first uses package:* supply-chain direct lookup, then runs MistEye detection on extracted url/domain/email/hash items; 3) summarizes the results centrally.
+The main purpose is to turn "manual-only" security checks into a daily automatic process, so that supply-chain poisoning, malicious external links, and missed detections caused by rule failures can be found earlier.
 ```
 
-## 输出格式
+## Output Format
 
 ```text
-MistEye API：safe=<true|false|unknown>, matches_count=<n>
-内部结果：malicious | no_match | error | no_check
-检测对象：<target>
-类型：<ip|ip:port|domain|url|email|file_hash|md5|sha1|sha256|package:*>
-证据：<matches[].severity/type/value/threat_type/confidence/source 等返回字段>
-动作：<已拦截 / 可继续（附风险）>
-可选复核：<若 safe=true 且 matches_count=0，提示是否去对应官方包源/注册表地址核对包元数据>
+MistEye API: safe=<true|false|unknown>, matches_count=<n>
+Internal result: malicious | no_match | error | no_check
+Detection target: <target>
+Type: <ip|ip:port|domain|url|email|file_hash|md5|sha1|sha256|package:*>
+Evidence: <returned fields such as matches[].severity/type/value/threat_type/confidence/source>
+Action: <blocked / continue (with risk)>
+Optional review: <when safe=true and matches_count=0, suggest checking metadata in the corresponding official package source or registry>
 ```
 
-针对 URL/域名问答，必须先输出可见化前置检测块（不允许省略）：
+For URL/domain questions, a visible pre-check block must be output first and may not be omitted:
 
 ```text
-[前置检测]
-URL 检测：<safe=false|matches_count_positive|safe=true matches_count=0|error|no_check>
-Domain 检测：<safe=false|matches_count_positive|safe=true matches_count=0|error|no_check>
-前置结论：<已拦截 / 可继续（附风险）>
+[Pre-check]
+URL detection: <safe=false|matches_count_positive|safe=true matches_count=0|error|no_check>
+Domain detection: <safe=false|matches_count_positive|safe=true matches_count=0|error|no_check>
+Pre-check conclusion: <blocked / continue (with risk)>
 ```
 
-只有 `前置结论=可继续` 时，才允许继续输出“网站信息/HTTP 状态/功能介绍”等正文。
+Only when `Pre-check conclusion=continue (with risk)` may "website info / HTTP status / feature introduction" be continued.
 
-针对“每日依赖巡检”输出，必须额外包含以下两块：
+For "daily dependency patrol" output, the following two blocks are additionally required:
 
-1. 覆盖率块
+1. Coverage block
 
 ```text
-[巡检覆盖率]
-已安装目录总数：<n>
-已扫描目录数：<n>
-依赖文件总数：<n>
-成功解析文件数：<n>
-解析失败文件数：<n>
-覆盖结论：<正常 / 巡检覆盖不足>
+[Patrol Coverage]
+Total installed directories: <n>
+Scanned directories: <n>
+Dependency files found: <n>
+Successfully parsed files: <n>
+Failed files: <n>
+Coverage conclusion: <normal / patrol coverage insufficient>
 ```
 
-2. 检测对象证据块（至少列出前若干条）
+2. Detection evidence block (list at least the first several items)
 
 ```text
-[检测对象证据]
+[Detection Evidence]
 <type> <target> <- <file_path>:<line_or_field> [source_kind=dependency_package|raw]
 ...
 ```
