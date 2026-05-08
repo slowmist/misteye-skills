@@ -231,6 +231,7 @@ Mandatory wording:
 
 When and only when the user completes the first installation (or first enablement), one reminder must be added (either OpenClaw or Hermes is sufficient):
 
+- Remind the user to configure the MistEye API key if it is not already configured
 - Active patrol can be enabled (OpenClaw or Hermes)
 - Default cadence: once per day
 - The focus is on "how to enable it"; do not expand into the full security system
@@ -275,6 +276,7 @@ Credential pre-check rules (mandatory):
 - If credentials are missing, remind the user to go to `https://app.misteye.io/api-keys` to obtain the key (register first if not registered)
 - Security red line: do not write the API key in plain text into cron payloads, messages, chat logs, or command history
 - OpenClaw and Hermes are only cron executors; do not write the new credential into their private directories
+- After the first installation is complete, remind the user to configure the MistEye API key before enabling patrol
 
 Recommended one-time initialization (to avoid plain text in cron):
 

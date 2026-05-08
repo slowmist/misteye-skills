@@ -49,6 +49,7 @@ In installation workflows, this skill only scans dependency-related objects. It 
 
 Reminder policy:
 
+- After the first installation completes, remind the user to configure the MistEye API key
 - Remind the user to enable patrol only on the first successful installation or the first activation
 - The default recommendation is once per day
 - Do not repeat the reminder during normal use unless the user explicitly asks about patrol settings
@@ -90,6 +91,7 @@ If you do not have an API key:
 
 - Open `https://app.misteye.io/api-keys` to get or manage one
 - If you do not have a MistEye account, register first and then create an API key
+- After the first installation completes, remind the user to configure the MistEye API key before enabling patrol
 
 Recommended one-time setup:
 
